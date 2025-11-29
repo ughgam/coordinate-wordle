@@ -17,6 +17,9 @@ class GuessResult:
     best_dist: float
     hit: bool
     error: Optional[str] = None
+    x_at_min: Optional[float] = None
+    y_at_min: Optional[float] = None
+
 
 
 @dataclass
@@ -72,13 +75,14 @@ class CoordinateWordleEngine:
             self._record_attempt(gr)
             return gr
 
-        dist = min_distance_curve_to_point(
+        dist, x_at_min, y_at_min = min_distance_curve_to_point(
             f,
             self.state.target,
             self.config.x_min,
             self.config.x_max,
             self.config.n_samples,
         )
+
 
         best_prev = self._best_dist_or_inf()
         best_dist = min(best_prev, dist)
@@ -89,6 +93,8 @@ class CoordinateWordleEngine:
             dist=dist,
             best_dist=best_dist,
             hit=hit,
+            x_at_min=x_at_min,
+            y_at_min=y_at_min,
         )
         self._record_attempt(gr)
         return gr

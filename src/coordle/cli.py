@@ -35,6 +35,9 @@ def main() -> None:
 
         print(f"Minimum distance for this function: {result.dist:.6f}")
         print(f"Best distance so far: {result.best_dist:.6f}")
+        if result.x_at_min is not None and result.x_at_min == result.x_at_min:  # not NaN
+            print(f"Closest approach around x ≈ {result.x_at_min:.3f}")
+
 
         if result.hit:
             print()
