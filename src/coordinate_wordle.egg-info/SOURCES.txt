@@ -1,0 +1,15 @@
+README.md
+pyproject.toml
+src/coordinate_wordle.egg-info/PKG-INFO
+src/coordinate_wordle.egg-info/SOURCES.txt
+src/coordinate_wordle.egg-info/dependency_links.txt
+src/coordinate_wordle.egg-info/requires.txt
+src/coordinate_wordle.egg-info/top_level.txt
+src/coordle/__init__.py
+src/coordle/cli.py
+src/coordle/config.py
+src/coordle/engine.py
+src/coordle/fuctions.py
+src/coordle/geometry.py
+tests/test_engine.py
+tests/test_functions.py
