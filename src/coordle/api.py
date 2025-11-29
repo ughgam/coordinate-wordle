@@ -29,11 +29,11 @@ app.add_middleware(
 )
 
 
-# In-memory store: game_id -> engine instance
+# In-memory store: game_id to engine instance yippiee
 GAMES: Dict[str, CoordinateWordleEngine] = {}
 
 
-# ---------- Pydantic models (request/response schemas) ----------
+# Pydantic models (request/response schemas)
 from fastapi.responses import Response
 from .plotting import create_attempt_image
 
@@ -59,10 +59,9 @@ class GuessResponse(BaseModel):
     image_url: str | None = None
     attempts_left: int
     error: str | None = None
-    # later we'll add: image_url: str | None
 
 
-# ---------- Endpoints ----------
+# Endpoints 
 
 @app.post("/new-game", response_model=NewGameResponse)
 def new_game() -> NewGameResponse:
@@ -87,8 +86,9 @@ def new_game() -> NewGameResponse:
 @app.post("/guess", response_model=GuessResponse)
 def guess(payload: GuessRequest) -> GuessResponse:
     """
-    Submit a function expression for a given game_id.
-    Returns distance and game state.
+    Submit a function expression for a given game_id
+    returns distance and game state
+    it jus looks kinda cool, nothing special.
     """
     game = GAMES.get(payload.game_id)
     if game is None:
@@ -131,7 +131,7 @@ def attempt_image(game_id: str, attempt_index: int):
         x_at_min=attempt.x_at_min,
         y_at_min=attempt.y_at_min,
         config=game.config,
-         show_target=True,  # always show the hidden point
+         show_target=True,  # always show the hidden point.... pause sus
     )
 
     return Response(content=img_bytes, media_type="image/png")
