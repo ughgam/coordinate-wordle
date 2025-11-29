@@ -9,7 +9,11 @@ description = "A function-based geometric guessing game."
 authors = [{ name = "Agam" }]
 readme = "README.md"
 requires-python = ">=3.10"
-dependencies = []
+dependencies = [
+    "fastapi",
+    "uvicorn",
+    "matplotlib",
+]
 
 [project.optional-dependencies]
 dev = ["pytest"]

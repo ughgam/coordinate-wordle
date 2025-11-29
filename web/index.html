@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Coordinate Wordle</title>
+  <style>
+    body {
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      max-width: 800px;
+      margin: 24px auto;
+      padding: 0 12px;
+    }
+    h1 {
+      margin-bottom: 4px;
+    }
+    #status {
+      margin-bottom: 12px;
+      font-size: 0.95rem;
+    }
+    #expr-input {
+      width: 100%;
+      padding: 8px;
+      font-size: 1rem;
+      margin-top: 4px;
+      box-sizing: border-box;
+    }
+    #guess-btn {
+      margin-top: 8px;
+      padding: 8px 14px;
+      font-size: 0.95rem;
+      cursor: pointer;
+    }
+    #log {
+      margin-top: 16px;
+      font-size: 0.9rem;
+    }
+    .log-entry {
+      margin-bottom: 4px;
+    }
+    #canvas-img {
+      margin-top: 16px;
+      border: 1px solid #ddd;
+      width: 400px;
+      height: 400px;
+      object-fit: contain;
+      display: block;
+    }
+    #error {
+      margin-top: 8px;
+      color: #b00020;
+      font-size: 0.9rem;
+      min-height: 1.2em;
+    }
+  </style>
+</head>
+<body>
+  <h1>Coordinate Wordle</h1>
+  <p>Guess the hidden point by shaping a function f(x). You see distance and a diagram after each guess.</p>
+
+  <div id="status">Starting game...</div>
+
+  <label for="expr-input">Enter f(x):</label>
+  <input
+    id="expr-input"
+    type="text"
+    placeholder="e.g. 2*x + 3, x**2 - 4*x + 1, sin(x) + x/2"
+  />
+  <button id="guess-btn">Submit guess</button>
+
+  <div id="error"></div>
+
+  <img id="canvas-img" alt="Function diagram will appear here" />
+
+  <div id="log"></div>
+
+  <script>
+    // Backend base URL (local)
+    const API_BASE = "http://127.0.0.1:8000";
+
+    let gameId = null;
+
+    const statusEl = document.getElementById("status");
+    const exprInput = document.getElementById("expr-input");
+    const guessBtn = document.getElementById("guess-btn");
+    const logEl = document.getElementById("log");
+    const imgEl = document.getElementById("canvas-img");
+    const errorEl = document.getElementById("error");
+
+    function addLog(text) {
+      const div = document.createElement("div");
+      div.className = "log-entry";
+      div.textContent = text;
+      logEl.prepend(div);
+    }
+
+    async function startGame() {
+      statusEl.textContent = "Creating game...";
+      errorEl.textContent = "";
+      try {
+        const res = await fetch(`${API_BASE}/new-game`, {
+          method: "POST"
+        });
+        const data = await res.json();
+        gameId = data.game_id;
+        statusEl.textContent =
+          `Game started. x ∈ [${data.x_min}, ${data.x_max}], attempts: ${data.max_attempts}, eps = ${data.eps}`;
+      } catch (err) {
+        statusEl.textContent = "Failed to start game.";
+        errorEl.textContent = "Could not reach backend. Is uvicorn running?";
+      }
+    }
+
+    async function sendGuess() {
+      const expr = exprInput.value.trim();
+      errorEl.textContent = "";
+
+      if (!expr) {
+        errorEl.textContent = "Expression cannot be empty.";
+        return;
+      }
+      if (!gameId) {
+        errorEl.textContent = "Game not initialized.";
+        return;
+      }
+
+      guessBtn.disabled = true;
+
+      try {
+        const res = await fetch(`${API_BASE}/guess`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ game_id: gameId, expr })
+        });
+        const data = await res.json();
+
+        if (data.error) {
+          errorEl.textContent = `Error: ${data.error}`;
+        } else {
+          addLog(
+            `f(x) = ${expr} → dist = ${data.dist.toFixed(4)}, best = ${data.best_dist.toFixed(4)}`
+          );
+        }
+
+        if (data.image_url && !data.error) {
+          // add cache-busting query param
+          imgEl.src = `${API_BASE}${data.image_url}?t=${Date.now()}`;
+        }
+
+        if (data.finished) {
+          if (data.hit) {
+            statusEl.textContent = "You hit the target! Game finished.";
+          } else {
+            statusEl.textContent = "Out of attempts. Game finished.";
+          }
+          exprInput.disabled = true;
+          guessBtn.disabled = true;
+        } else {
+          statusEl.textContent =
+            `Attempts used: ${data.attempts_used}, left: ${data.attempts_left}`;
+          guessBtn.disabled = false;
+        }
+      } catch (err) {
+        errorEl.textContent = "Request failed. Check if backend is running.";
+        guessBtn.disabled = false;
+      }
+    }
+
+    guessBtn.addEventListener("click", sendGuess);
+    exprInput.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") {
+        sendGuess();
+      }
+    });
+
+    // start when page loads
+    startGame();
+  </script>
+</body>
+</html>
