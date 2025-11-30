@@ -10,6 +10,7 @@ import uuid
 
 from .config import GameConfig
 from .engine import CoordinateWordleEngine
+from .plotting import create_attempt_image
 
 app = FastAPI()
 
@@ -19,7 +20,6 @@ origins = [
     "https://ughgam.github.io",
 ]
 
-
 app.add_middleware(
     CORSMiddleware,
     allow_origins=origins,
@@ -28,14 +28,16 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-
-# In-memory store: game_id to engine instance yippiee
+# In-memory store: game_id to engine instance
 GAMES: Dict[str, CoordinateWordleEngine] = {}
 
 
-# Pydantic models (request/response schemas)
-from fastapi.responses import Response
-from .plotting import create_attempt_image
+# ---------- Pydantic models ----------
+
+class Point(BaseModel):
+    x: float
+    y: float
+
 
 class NewGameResponse(BaseModel):
     game_id: str
@@ -43,6 +45,8 @@ class NewGameResponse(BaseModel):
     x_max: float
     max_attempts: int
     eps: float
+    # expose the target so the frontend can reveal it (only on demand)
+    solution_point: Point
 
 
 class GuessRequest(BaseModel):
@@ -59,9 +63,11 @@ class GuessResponse(BaseModel):
     image_url: str | None = None
     attempts_left: int
     error: str | None = None
+    # optional here so the backend can choose when to reveal
+    solution_point: Point | None = None
 
 
-# Endpoints 
+# ---------- Endpoints ----------
 
 @app.post("/new-game", response_model=NewGameResponse)
 def new_game() -> NewGameResponse:
@@ -74,21 +80,24 @@ def new_game() -> NewGameResponse:
     game_id = str(uuid.uuid4())
     GAMES[game_id] = engine
 
+    # target is usually a tuple (x, y) on the engine state
+    tx, ty = engine.state.target
+
     return NewGameResponse(
         game_id=game_id,
         x_min=config.x_min,
         x_max=config.x_max,
         max_attempts=config.max_attempts,
         eps=config.eps,
+        solution_point=Point(x=tx, y=ty),
     )
 
 
 @app.post("/guess", response_model=GuessResponse)
 def guess(payload: GuessRequest) -> GuessResponse:
     """
-    Submit a function expression for a given game_id
-    returns distance and game state
-    it jus looks kinda cool, nothing special.
+    Submit a function expression for a given game_id.
+    Returns distance and game state.
     """
     game = GAMES.get(payload.game_id)
     if game is None:
@@ -97,18 +106,34 @@ def guess(payload: GuessRequest) -> GuessResponse:
     result = game.submit_guess(payload.expr)
 
     attempt_index = len(game.state.attempts) - 1
-    image_url = f"/image/{payload.game_id}/{attempt_index}" if result.error is None else None
+    image_url = (
+        f"/image/{payload.game_id}/{attempt_index}"
+        if result.error is None
+        else None
+    )
+
+    finished = game.is_finished()
+    attempts_used = len(game.state.attempts)
+    attempts_left = game.remaining_attempts()
+
+    # same target as on new-game
+    tx, ty = game.state.target
+    # you can choose to only reveal when finished;
+    # for now we always include it, frontend decides when to show
+    solution_point = Point(x=tx, y=ty)
 
     return GuessResponse(
         dist=result.dist,
         best_dist=result.best_dist,
         hit=result.hit,
-        finished=game.is_finished(),
-        attempts_used=len(game.state.attempts),
-        attempts_left=game.remaining_attempts(),
+        finished=finished,
+        attempts_used=attempts_used,
+        attempts_left=attempts_left,
         error=result.error,
         image_url=image_url,
+        solution_point=solution_point,
     )
+
 
 @app.get("/image/{game_id}/{attempt_index}")
 def attempt_image(game_id: str, attempt_index: int):
@@ -131,7 +156,7 @@ def attempt_image(game_id: str, attempt_index: int):
         x_at_min=attempt.x_at_min,
         y_at_min=attempt.y_at_min,
         config=game.config,
-         show_target=True,  # always show the hidden point.... pause sus
+        show_target=True,  # always show the hidden point visually
     )
 
     return Response(content=img_bytes, media_type="image/png")
