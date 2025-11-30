@@ -33,7 +33,7 @@
       font-family: system-ui, -apple-system, BlinkMacSystemFont, "SF Pro Text",
         "Inter", sans-serif;
       background: radial-gradient(circle at top, #111827 0, #020617 45%, #020617 100%);
-      background-size: 180% 180%; /* animated background */
+      background-size: 180% 180%;
       animation: bg-shift 28s ease-in-out infinite;
       color: var(--text);
       display: flex;
@@ -208,6 +208,12 @@
       gap: 6px;
       white-space: nowrap;
       box-shadow: 0 0 18px rgba(79, 70, 229, 0.35);
+      cursor: pointer;
+    }
+
+    .pill:focus-visible {
+      outline: 2px solid rgba(129, 140, 248, 0.9);
+      outline-offset: 2px;
     }
 
     .pill-dot {
@@ -406,6 +412,31 @@
       color: var(--danger);
     }
 
+    .solution-display {
+      margin-top: 10px;
+      padding: 6px 9px;
+      border-radius: 999px;
+      border: 1px solid rgba(55, 65, 81, 0.9);
+      background: rgba(15, 23, 42, 0.9);
+      font-size: 0.78rem;
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      gap: 6px;
+    }
+
+    .solution-label {
+      text-transform: uppercase;
+      letter-spacing: 0.14em;
+      font-size: 0.67rem;
+      color: #6b7280;
+    }
+
+    .solution-value {
+      font-family: var(--mono);
+      color: #e5e7eb;
+    }
+
     .side-card {
       background: radial-gradient(circle at top left,
         rgba(15, 23, 42, 1) 0,
@@ -526,7 +557,7 @@
       background: radial-gradient(circle, #020617, #020617 60%, #000000 100%);
       object-fit: contain;
       min-height: 260px;
-      display: none; /* hidden until first image arrives */
+      display: none;
     }
 
     .diagram-placeholder {
@@ -698,10 +729,10 @@
               Guess with curves. Shape <code>f(x)</code> to hit a hidden point in the plane.
             </p>
           </div>
-          <div class="pill">
+          <button class="pill" id="reveal-pill" type="button">
             <span class="pill-dot"></span>
             <span>bleh</span>
-          </div>
+          </button>
         </div>
 
         <div class="status-bar">
@@ -741,6 +772,11 @@
         </div>
 
         <div class="log" id="log"></div>
+
+        <div id="solution-display" class="solution-display" style="display: none;">
+          <span class="solution-label">Target</span>
+          <span id="solution-value" class="solution-value"></span>
+        </div>
       </div>
     </div>
 
@@ -794,193 +830,271 @@
     </div>
   </div>
 
- <script>
-  const API_BASE = "https://coordinate-wordle.onrender.com"; // backend URL
+  <script>
+    const API_BASE = "https://coordinate-wordle.onrender.com"; // backend URL
 
-  let gameId = null;
-  let gameConfig = null;
-  let lastImageUrl = null;
-  let requestInFlight = false;
+    let gameId = null;
+    let gameConfig = null;
+    let lastImageUrl = null;
+    let requestInFlight = false;
+    let solutionPoint = null; // store hidden coordinate if backend sends it
 
-  const statusEl = document.getElementById("status-text");
-  const domainTagEl = document.getElementById("domain-tag");
-  const attemptsTagEl = document.getElementById("attempts-tag");
-  const attemptsSummaryEl = document.getElementById("attempts-summary");
+    const statusEl = document.getElementById("status-text");
+    const domainTagEl = document.getElementById("domain-tag");
+    const attemptsTagEl = document.getElementById("attempts-tag");
+    const attemptsSummaryEl = document.getElementById("attempts-summary");
 
-  const inputEl = document.getElementById("expr-input");
-  const btnEl = document.getElementById("guess-btn");
-  const logEl = document.getElementById("log");
+    const inputEl = document.getElementById("expr-input");
+    const btnEl = document.getElementById("guess-btn");
+    const logEl = document.getElementById("log");
 
-  const diagramImg = document.getElementById("diagram-img");
-  const diagramPlaceholder = document.getElementById("diagram-placeholder");
+    const diagramImg = document.getElementById("diagram-img");
+    const diagramPlaceholder = document.getElementById("diagram-placeholder");
 
-  // --- NEW: make user input more forgiving ---
-  function normalizeExpression(input) {
-    if (!input) return "";
+    const solutionDisplayEl = document.getElementById("solution-display");
+    const solutionValueEl = document.getElementById("solution-value");
+    const revealPill = document.getElementById("reveal-pill");
 
-    let expr = input.trim();
+    // ----------  INPUT NORMALIZATION (friendlier math) ----------
 
-    // basic symbol fixes
-    expr = expr.replace(/×/g, "*").replace(/÷/g, "/");
-    expr = expr.replace(/\^/g, "**");          // x^2 -> x**2
-    expr = expr.replace(/X/g, "x");            // X -> x
-    expr = expr.replace(/\bln\b/gi, "log");    // ln -> log
+    function normalizeExpression(input) {
+      if (!input) return "";
 
-    const funcs = ["sin", "cos", "tan", "log", "sqrt", "exp", "abs", "floor", "ceil"];
+      let expr = input.trim();
 
-    // normalize function names to lowercase
-    for (const fn of funcs) {
-      const re = new RegExp("\\b" + fn + "\\b", "gi");
-      expr = expr.replace(re, fn);
+      // basic symbol fixes
+      expr = expr.replace(/×/g, "*").replace(/÷/g, "/");
+      expr = expr.replace(/\^/g, "**");          // x^2 -> x**2
+      expr = expr.replace(/X/g, "x");            // X -> x
+      expr = expr.replace(/\bln\b/gi, "log");    // ln -> log
+
+      const funcs = ["sin", "cos", "tan", "log", "sqrt", "exp", "abs", "floor", "ceil"];
+
+      // normalize function names to lowercase
+      for (const fn of funcs) {
+        const re = new RegExp("\\b" + fn + "\\b", "gi");
+        expr = expr.replace(re, fn);
+      }
+
+      // sinx, cosx, etc. -> sin(x), cos(x)
+      const fnNoParens = new RegExp(
+        "\\b(" + funcs.join("|") + ")\\s*x\\b",
+        "gi"
+      );
+      expr = expr.replace(fnNoParens, (match, fn) => fn.toLowerCase() + "(x)");
+
+      // implicit multiplication:
+      // 2x -> 2*x, )x -> )*x, x2 -> x*2, 2(x+1) -> 2*(x+1), x(x+1) -> x*(x+1)
+      expr = expr.replace(/(\d|\)|x)\s*(\()/g, "$1*$2");        // 2( or x( or )( -> *(
+      expr = expr.replace(/(\d|\))\s*(x)/g, "$1*$2");           // 2x, )x
+      expr = expr.replace(/(x)\s*(\d)/g, "$1*$2");              // x2
+      expr = expr.replace(
+        /(\d|\))\s*(sin|cos|tan|log|sqrt|exp|abs|floor|ceil)\b/gi,
+        "$1*$2"
+      ); // 2sin(x) -> 2*sin(x)
+
+      return expr.trim();
     }
 
-    // sinx, cosx, etc. -> sin(x), cos(x)
-    const fnNoParens = new RegExp(
-      "\\b(" + funcs.join("|") + ")\\s*x\\b",
-      "gi"
-    );
-    expr = expr.replace(fnNoParens, (match, fn) => fn.toLowerCase() + "(x)");
+    // ----------  SOLUTION HANDLING ----------
 
-    // implicit multiplication:
-    // 2x -> 2*x, )x -> )*x, x2 -> x*2, 2(x+1) -> 2*(x+1), x(x+1) -> x*(x+1)
-    expr = expr.replace(/(\d|\)|x)\s*(\()/g, "$1*$2");        // 2( or x( or )( -> *(
-    expr = expr.replace(/(\d|\))\s*(x)/g, "$1*$2");           // 2x, )x
-    expr = expr.replace(/(x)\s*(\d)/g, "$1*$2");              // x2
-    expr = expr.replace(
-      /(\d|\))\s*(sin|cos|tan|log|sqrt|exp|abs|floor|ceil)\b/gi,
-      "$1*$2"
-    ); // 2sin(x) -> 2*sin(x)
+    function extractSolutionFromData(data) {
+      // Try multiple keys so you can choose any of them on the backend
+      const sol =
+        data.solution_point ??
+        data.solution ??
+        data.answer ??
+        data.target ??
+        data.target_point ??
+        data.hidden_point;
 
-    return expr.trim();
-  }
-
-  function setButtonLoading(isLoading) {
-    requestInFlight = isLoading;
-    btnEl.disabled = isLoading;
-    if (isLoading) {
-      btnEl.textContent = "Evaluating…";
-    } else {
-      btnEl.innerHTML = '<span class="icon">➤</span><span>Submit guess</span>';
-    }
-  }
-
-  function addLogEntry({ expr, dist, best, error, raw }) {
-    const div = document.createElement("div");
-    div.className = "log-entry";
-    if (error) div.classList.add("error");
-
-    const exprSpan = document.createElement("span");
-    exprSpan.className = "expr";
-
-    // show what user typed if it got rewritten
-    if (raw && raw !== expr && !error) {
-      exprSpan.textContent = `f(x) = ${expr}   [from: ${raw}]`;
-    } else if (error) {
-      exprSpan.textContent = raw || expr || "[invalid]";
-    } else {
-      exprSpan.textContent = `f(x) = ${expr}`;
+      if (sol !== undefined && sol !== null) {
+        solutionPoint = sol;
+      }
     }
 
-    const metricsSpan = document.createElement("span");
-    metricsSpan.className = "metrics";
-
-    if (error) {
-      metricsSpan.textContent = error;
-    } else {
-      metricsSpan.textContent = `dist = ${dist.toFixed(4)} · best = ${best.toFixed(4)}`;
+    function formatSolution(sol) {
+      if (Array.isArray(sol) && sol.length >= 2) {
+        return `(${sol[0]}, ${sol[1]})`;
+      }
+      if (typeof sol === "object" && sol !== null && "x" in sol && "y" in sol) {
+        return `(${sol.x}, ${sol.y})`;
+      }
+      // fallback: just stringify
+      return String(sol);
     }
 
-    div.appendChild(exprSpan);
-    div.appendChild(metricsSpan);
+    function revealSolution() {
+      if (!solutionPoint) {
+        // if backend doesn't send solution yet
+        statusEl.textContent = "Answer not available yet. Finish the game first.";
+        return;
+      }
+      const text = formatSolution(solutionPoint);
 
-    logEl.prepend(div);
-  }
-
-  function updateAttemptsInfo(used, left) {
-    attemptsSummaryEl.innerHTML = `Attempts used: <strong>${used}</strong> · Left: <strong>${left}</strong>`;
-    attemptsTagEl.textContent = `${used}/${used + left}`;
-  }
-
-  async function startGame() {
-    statusEl.textContent = "Creating game…";
-
-    try {
-      const res = await fetch(`${API_BASE}/new-game`, {
-        method: "POST"
-      });
-      const data = await res.json();
-      gameId = data.game_id;
-      gameConfig = data;
-
-      statusEl.textContent = "Game ready. Shape f(x) to approach the hidden point.";
-      domainTagEl.textContent = `${data.x_min} to ${data.x_max}`;
-      attemptsTagEl.textContent = `0/${data.max_attempts}`;
-      updateAttemptsInfo(0, data.max_attempts);
-    } catch (err) {
-      console.error(err);
-      statusEl.textContent = "Failed to start game. Check connection.";
-    }
-  }
-
-  async function sendGuess() {
-    const raw = inputEl.value;
-    const expr = normalizeExpression(raw);
-
-    if (!expr || !gameId || requestInFlight) return;
-
-    setButtonLoading(true);
-    statusEl.textContent = "Evaluating curve…";
-
-    try {
-      const res = await fetch(`${API_BASE}/guess`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ game_id: gameId, expr })
-      });
-
-      const data = await res.json();
-
-      if (data.error) {
-        addLogEntry({ expr, raw, error: data.error, dist: 0, best: data.best_dist ?? 0 });
-        statusEl.textContent = "Expression rejected. Check syntax / allowed functions.";
+      if (solutionDisplayEl && solutionValueEl) {
+        solutionDisplayEl.style.display = "flex";
+        solutionValueEl.textContent = text;
       } else {
-        addLogEntry({ expr, raw, dist: data.dist, best: data.best_dist });
-        statusEl.textContent = data.hit
-          ? "You hit the target (within tolerance). Nicely done."
-          : "Curve evaluated. Adjust and try again.";
+        // fallback: shove into status if the DOM nodes don't exist
+        statusEl.textContent = `Target point: ${text}`;
       }
-
-      updateAttemptsInfo(data.attempts_used, data.attempts_left);
-
-      if (data.image_url) {
-        // bust cache by appending a timestamp
-        lastImageUrl = `${API_BASE}${data.image_url}?t=${Date.now()}`;
-        diagramImg.src = lastImageUrl;
-        diagramImg.style.display = "block";
-        diagramPlaceholder.style.display = "none";
-      }
-
-      if (data.finished) {
-        btnEl.disabled = true;
-        inputEl.disabled = true;
-        if (!data.hit && !data.error) {
-          statusEl.textContent = "Out of attempts. Session ended.";
-        }
-      }
-    } catch (err) {
-      console.error(err);
-      statusEl.textContent = "Request failed. Network or server issue.";
-    } finally {
-      setButtonLoading(false);
     }
-  }
 
-  btnEl.addEventListener("click", sendGuess);
-  inputEl.addEventListener("keydown", (e) => {
-    if (e.key === "Enter") sendGuess();
-  });
+    if (revealPill) {
+      revealPill.addEventListener("click", () => {
+        revealSolution();
+      });
 
-  startGame();
-</script>
+      revealPill.addEventListener("keydown", (e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          revealSolution();
+        }
+      });
+    }
+
+    // ----------  UI HELPERS ----------
+
+    function setButtonLoading(isLoading) {
+      requestInFlight = isLoading;
+      btnEl.disabled = isLoading;
+      btnEl.textContent = isLoading ? "Evaluating…" : "";
+      if (!isLoading) {
+        btnEl.innerHTML = '<span class="icon">➤</span><span>Submit guess</span>';
+      }
+    }
+
+    function addLogEntry({ expr, dist, best, error, raw }) {
+      const div = document.createElement("div");
+      div.className = "log-entry";
+      if (error) div.classList.add("error");
+
+      const exprSpan = document.createElement("span");
+      exprSpan.className = "expr";
+
+      if (raw && raw !== expr && !error) {
+        exprSpan.textContent = `f(x) = ${expr}   [from: ${raw}]`;
+      } else if (error) {
+        exprSpan.textContent = raw || expr || "[invalid]";
+      } else {
+        exprSpan.textContent = `f(x) = ${expr}`;
+      }
+
+      const metricsSpan = document.createElement("span");
+      metricsSpan.className = "metrics";
+
+      if (error) {
+        metricsSpan.textContent = error;
+      } else {
+        metricsSpan.textContent = `dist = ${dist.toFixed(4)} · best = ${best.toFixed(4)}`;
+      }
+
+      div.appendChild(exprSpan);
+      div.appendChild(metricsSpan);
+
+      logEl.prepend(div);
+    }
+
+    function updateAttemptsInfo(used, left) {
+      attemptsSummaryEl.innerHTML = `Attempts used: <strong>${used}</strong> · Left: <strong>${left}</strong>`;
+      attemptsTagEl.textContent = `${used}/${used + left}`;
+    }
+
+    // ----------  GAME FLOW ----------
+
+    async function startGame() {
+      statusEl.textContent = "Creating game…";
+      solutionPoint = null;
+      if (solutionDisplayEl) {
+        solutionDisplayEl.style.display = "none";
+      }
+
+      try {
+        const res = await fetch(`${API_BASE}/new-game`, {
+          method: "POST"
+        });
+        const data = await res.json();
+        gameId = data.game_id;
+        gameConfig = data;
+
+        statusEl.textContent = "Game ready. Shape f(x) to approach the hidden point.";
+        domainTagEl.textContent = `${data.x_min} to ${data.x_max}`;
+        attemptsTagEl.textContent = `0/${data.max_attempts}`;
+        updateAttemptsInfo(0, data.max_attempts);
+
+        // just in case you decide to send the solution even at start
+        extractSolutionFromData(data);
+      } catch (err) {
+        console.error(err);
+        statusEl.textContent = "Failed to start game. Check connection.";
+      }
+    }
+
+    async function sendGuess() {
+      const raw = inputEl.value;
+      const expr = normalizeExpression(raw);
+
+      if (!expr || !gameId || requestInFlight) return;
+
+      setButtonLoading(true);
+      statusEl.textContent = "Evaluating curve…";
+
+      try {
+        const res = await fetch(`${API_BASE}/guess`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ game_id: gameId, expr })
+        });
+
+        const data = await res.json();
+
+        // try to grab solution if backend sends it
+        extractSolutionFromData(data);
+
+        if (data.error) {
+          addLogEntry({ expr, raw, error: data.error, dist: 0, best: data.best_dist ?? 0 });
+          statusEl.textContent = "Expression rejected. Check syntax / allowed functions.";
+        } else {
+          addLogEntry({ expr, raw, dist: data.dist, best: data.best_dist });
+          statusEl.textContent = data.hit
+            ? "You hit the target (within tolerance). Nicely done."
+            : "Curve evaluated. Adjust and try again.";
+        }
+
+        updateAttemptsInfo(data.attempts_used, data.attempts_left);
+
+        if (data.image_url) {
+          lastImageUrl = `${API_BASE}${data.image_url}?t=${Date.now()}`;
+          diagramImg.src = lastImageUrl;
+          diagramImg.style.display = "block";
+          diagramPlaceholder.style.display = "none";
+        }
+
+        if (data.finished) {
+          btnEl.disabled = true;
+          inputEl.disabled = true;
+
+          if (!data.hit && !data.error) {
+            statusEl.textContent = "Out of attempts. Session ended.";
+            // auto-reveal the answer on failure
+            revealSolution();
+          }
+        }
+      } catch (err) {
+        console.error(err);
+        statusEl.textContent = "Request failed. Network or server issue.";
+      } finally {
+        setButtonLoading(false);
+      }
+    }
+
+    btnEl.addEventListener("click", sendGuess);
+    inputEl.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") sendGuess();
+    });
+
+    startGame();
+  </script>
 </body>
 </html>
