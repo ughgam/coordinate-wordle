@@ -25,7 +25,7 @@ dist = 3.8721, best = 2.4415
 Closest approach around x ≈ 1.33
 
 - Expressions are parsed via Python's `ast` module and evaluated in a restricted environment:
-  | Allowed                         | Not Allowed              |
+| Allowed                         | Not Allowed              |
 | ------------------------------- | ------------------------ |
 | `+ - * / **`                    | File access, imports     |
 | `sin, cos, tan`                 | Infinite loops           |
