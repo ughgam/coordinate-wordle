@@ -10,11 +10,11 @@ A not so secret point is hidden somewhere in a 2D plane.  (it will be **secret**
 
 ## Concept
 
-| What You Guess | What It Represents |
-|----------------|--------------------|
-| f(x) = 2*x + 3 | A straight line |
-| f(x) = sin(x) + x/2 | A wavy curve |
-| f(x) = x**2 - 4*x | A parabola |
+-| What You Guess | What It Represents |
+-|----------------|--------------------|
+-| f(x) = 2*x + 3 | A straight line |
+-| f(x) = sin(x) + x/2 | A wavy curve |
+-| f(x) = x**2 - 4*x | A parabola |
 
 The system:
 1. Samples your function across a domain range.
