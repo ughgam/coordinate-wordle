@@ -25,12 +25,13 @@ dist = 3.8721, best = 2.4415
 Closest approach around x ≈ 1.33
 
 - Expressions are parsed via Python's `ast` module and evaluated in a restricted environment:
-| Allowed                         | Not Allowed              |
-| ------------------------------- | ------------------------ |
-| `+ - * / **`                    | File access, imports     |
-| `sin, cos, tan`                 | Infinite loops           |
-| `log, exp, sqrt`                | Variables other than `x` |
-| Conditional: `x if x>0 else -x` | Function definitions     |
+  
+  | Allowed                         | Not Allowed              |
+  | ------------------------------- | ------------------------ |
+  | `+ - * / **`                    | File access, imports |
+  | `sin, cos, tan`                 | Infinite loops           |
+  | `log, exp, sqrt`                | Variables other than `x` |
+  | Conditional: `x if x>0 else -x` | Function definitions     |
 
 --
 
@@ -41,21 +42,21 @@ And displays an **image** showing:
 
 ---
 
-## TO RUN IT LOCALLY
-# Clone
+# TO RUN IT LOCALLY
+## Clone
 git clone https://github.com/ughgam/coordinate-wordle
 cd coordinate-wordle
 
-# Install
+## Install
 pip install -r requirements.txt
 
-# Run backend
+## Run backend
 uvicorn coordle.api:app --reload
 
-# Open browser
+## Open browser
 http://127.0.0.1:8000/docs
 
-# Serve frontend (optional)
+## Serve frontend (optional)
 cd docs
 python -m http.server 8080
 
@@ -67,7 +68,7 @@ pip install -e .
 ---
 
 
-##  Tech Stack
+#  Tech Stack
 
 | Layer | Choice |
 |-------|--------|
@@ -81,7 +82,7 @@ pip install -e .
 
 ---
 
-##  API Endpoints
+#  API Endpoints
 
 | Method | Endpoint | Purpose |
 |--------|----------|---------|
